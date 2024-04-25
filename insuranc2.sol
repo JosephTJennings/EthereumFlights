@@ -1,5 +1,7 @@
 pragma solidity >=0.7.0 <0.8.0;
 pragma abicoder v2;
+
+// REMIX ETHEREUM FOR IDE
 contract FlightInsurance {
 
     struct InsurancePolicy {

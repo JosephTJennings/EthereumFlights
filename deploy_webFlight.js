@@ -1,4 +1,6 @@
 // Right click on the script name and hit "Run" to execute
+
+// REMIX ETHEREUM FOR IDE
 (async () => {
     try {
         console.log('Running deployWithWeb3 script...')
