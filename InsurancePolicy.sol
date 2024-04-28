@@ -1,19 +1,20 @@
 pragma solidity >=0.7.0 <0.8.0;
-
+pragma abicoder v2;
 contract FlightInsurance {
 
     struct InsurancePolicy {
         address passengerAddress;
         string passengerName;
         string flightNumber;
-        uint256 flightDate;
+        string flightDate;
         string departureCity;
         string destinationCity;
         string status;
     }
 
     mapping(address => InsurancePolicy) public policies;
-    address public insuranceProvider;
+    address[] public addressArray; 
+    address public insuranceProvider = 0xAb8483F64d9C6d1EcF9b849Ae677dD3315835cb2;
     uint256 public premium = 0.001 ether;
     uint256 public indemnity = 0.02 ether;
 
@@ -31,14 +32,14 @@ contract FlightInsurance {
         insuranceProvider = msg.sender;
     }
 
-    function viewAvailablePolicy() external pure returns (string memory) {
+    function viewAvailablePolicy() external view onlyPassenger returns (string memory) {
         return "Premium: 0.001 Ether, Indemnity: 0.02 Ether, Coverage: Extreme weather";
     }
 
     function purchasePolicy(
         string memory _passengerName,
         string memory _flightNumber,
-        uint256 _flightDate,
+        string memory _flightDate,
         string memory _departureCity,
         string memory _destinationCity
     ) external payable onlyPassenger {
@@ -54,6 +55,7 @@ contract FlightInsurance {
             destinationCity: _destinationCity,
             status: "purchased"
         });
+        addressArray.push(msg.sender);
 
         payable(insuranceProvider).transfer(premium);
     }
@@ -63,14 +65,33 @@ contract FlightInsurance {
     }
 
     function viewAllPolicies() external view onlyInsuranceProvider returns (InsurancePolicy[] memory) {
-        InsurancePolicy[] memory allPolicies = new InsurancePolicy[](address(this).balance / premium);
-        uint256 index = 0;
-        for (uint256 i = 0; i < address(this).balance / premium; i++) {
-            if (policies[insuranceProvider].passengerAddress != address(0)) {
-                allPolicies[index] = policies[insuranceProvider];
-                index++;
-            }
+        InsurancePolicy[] memory allPolicies = new InsurancePolicy[](addressArray.length);
+        for (uint256 i = 0; i < addressArray.length; i++) {
+            address policyAddress = addressArray[i];
+            allPolicies[i] = policies[policyAddress];
         }
         return allPolicies;
+    }
+    function viewBalance() external view returns (uint256) {
+        return address(msg.sender).balance;
+    }
+
+    function payIndemnity(address payable _passengerAddress) external payable onlyInsuranceProvider returns (bool) {
+        // Check if the policy exists for the provided passenger address
+        require(policies[_passengerAddress].passengerAddress != address(0), "Policy not found");
+                require(msg.value >= indemnity, "Insufficient value");
+
+        // Transfer indemnity amount from insurance provider to passenger
+        bool success = _passengerAddress.send(indemnity);
+        require(success, "Transfer failed");
+
+        return true;
+    }
+
+
+    function verify(address _passengerAddress) external  onlyInsuranceProvider {
+        // Assume the conditions are extreme if this is being called
+        require(policies[_passengerAddress].passengerAddress != address(0), "Policy not found");
+        policies[_passengerAddress].status = "claimed";
     }
 }
