@@ -1,45 +1,53 @@
-const axios = require('axios');
+// const axios = require('axios');
 
-let weatherRecords = []; // Mock weather data for testing
-
-// Function to fetch weather data from a public API
-async function fetchWeatherData(city, date) {
+const readWeatherData = async (filePath) => {
     try {
-        const response = await axios.get(`https://api.weather.gov/...?city=${city}&date=${date}`);
-        return response.data; // Adjust this based on the actual response format
+        let data = await remix.call('fileManager', 'getFile', 'browser/EthereumFlights/weather.txt')
+        // Split the data into lines and parse each line to extract weather information
+        const lines = data.split('\n').slice(1); // Skip the header line
+        console.log(lines);
+        const weatherRecords = lines.map(line => {
+            const [date, city, weather] = line.trim().split(/\s+/);
+            return { date, city, weather };
+        });
+        return weatherRecords;
+    } catch (err) {``
+        console.error('Error reading weather data:', err);
+        throw err;
+    }
+};
+
+async function checkExtremeConditions(weatherRecords, destinationCity, flightDate) {
+    try {
+        // Find weather record for the destination city and date
+        console.log()
+        const record = weatherRecords.find(record => record.city === destinationCity && record.date === flightDate);
+
+        // If no record found, return false (weather not available)
+        if (!record) {
+            return false;
+        }
+
+        // Check if weather is hail or floods
+        if (record.weather === 'Hail' || record.weather === 'Flood') {
+            return true;
+        } else {
+            return false;
+        }
     } catch (error) {
-        console.error("Error fetching weather data:", error);
-        return null;
+        console.error('Error checking extreme conditions:', error);
+        return false;
     }
 }
 
-// Function to verify flight delay based on weather conditions
-async function verifyFlightDelay(contract, insuranceProviderAddress, passengerAddress, departureCity, flightDate) {
-    // Fetch weather data for the departure city and flight date
-    const weatherData = await fetchWeatherData(departureCity, flightDate);
-    
-    // If extreme weather conditions (e.g., hurricanes, rainstorms) are detected, trigger insurance verification and payout
-    if (weatherData && (weatherData.weather === 'Hail' || weatherData.weather === 'Flood')) {
-        // Call the verify function on the contract
-        await contract.methods.verify(passengerAddress, departureCity, flightDate).send({
-            from: insuranceProviderAddress
-        });
-        
-        console.log("Flight delay verified and indemnity paid.");
-    } else {
-        console.log("No extreme weather detected for the given departure city and flight date.");
-    }
-}
 
 (async () => {
     try {
         console.log('Running deployWithWeb3 script...')
+        const weatherRecords = await readWeatherData();
         
-        // const contractName = '1_Storage' // Change this for other contract
         const constructorArgs = []    // Put constructor args (if any) here for your contract
-    
-        // Note that the script needs the ABI which is generated from the compilation artifact.
-        // Make sure contract is compiled and artifacts are generated
+
         const artifactsPath = `EthereumFlights/artifacts/FlightInsurance.json` // Change this for different path
 
         const metadata = JSON.parse(await remix.call('fileManager', 'getFile', artifactsPath))
@@ -57,17 +65,18 @@ async function verifyFlightDelay(contract, insuranceProviderAddress, passengerAd
             arguments: constructorArgs
         }).send({
             from: insuranceProviderAddress,
-            gas: '5000000' // Adjust gas limit as needed
+            gas: '5000000000000000000' // Adjust gas limit
         });
 
-        console.log("Contract deployed at address:", deployedContract.options.address);
-
-        // Set the address of the deployed contract
         contract.options.address = deployedContract.options.address;
 
         console.log("STARTING");
         const curPolicy = await contract.methods.viewAvailablePolicy().call({from: passengerAddress});
         console.log(curPolicy);
+
+        const prevBa = await contract.methods.viewBalance().call({from: passengerAddress});
+        console.log("Prev balance: " + prevBa);
+
         await contract.methods.purchasePolicy(
             "Alicia",
             "1",
@@ -79,23 +88,26 @@ async function verifyFlightDelay(contract, insuranceProviderAddress, passengerAd
             value: '1000000000000000' // 0.001 ether in wei
         });
 
-        console.log("Policy purchased successfully.");
+        const boughtPolicy = await contract.methods.viewPurchasedPolicy().call({from: passengerAddress});
+        console.log("Purchased Policy: " +  boughtPolicy);
 
-        // View Purchased Policy
-        const purchasedPolicy = await contract.methods.viewPurchasedPolicy().call({
-            from: passengerAddress
-        });
+        const extremeWeather = await checkExtremeConditions(weatherRecords, boughtPolicy.destinationCity, boughtPolicy.flightDate);
+        if(extremeWeather) {
+            console.log("-------------------------------------------------------------EXTREME WEATHER FOUND-----------------------------------------------------------");
+            const prevBal = await contract.methods.viewBalance().call({from: passengerAddress});
+            console.log("Prev balance: " + prevBal);
+            await contract.methods.verify(passengerAddress).send({from: insuranceProviderAddress});
 
-        console.log("Purchased Policy:", purchasedPolicy);
+            await contract.methods.payIndemnity(passengerAddress).send({
+                from: insuranceProviderAddress,
+                value: '300000000000000000'
+            });
+            const postBal = await contract.methods.viewBalance().call({from: passengerAddress});
 
-        await verifyFlightDelay(contract, insuranceProviderAddress, passengerAddress, 'Hong Kong', '2023-04-15');
-
-        // Query the Ethereum blockchain for policy status and payment verification
-        const policyStatus = await contract.methods.checkPolicyStatus(passengerAddress).call({
-            from: passengerAddress
-        });
-
-        console.log("Policy Status:", policyStatus);
+            console.log("Post balance: " + postBal);
+            console.log("Difference: " + (postBal - prevBal));
+            console.log("All Policies:"  + await contract.methods.viewAllPolicies().call({from: insuranceProviderAddress}));
+        }
     } catch (e) {
         console.log(e.message)
     }
