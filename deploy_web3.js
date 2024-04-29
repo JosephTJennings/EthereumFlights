@@ -39,7 +39,6 @@ const readWeatherData = async (filePath) => {
         let data = await remix.call('fileManager', 'getFile', 'browser/EthereumFlights/weather.txt')
         // Split the data into lines and parse each line to extract weather information
         const lines = data.split('\n').slice(1); // Skip the header line
-        console.log(lines);
         const weatherRecords = lines.map(line => {
             const [date, city, weather] = line.trim().split(/\s+/);
             return { date, city, weather };
@@ -53,8 +52,6 @@ const readWeatherData = async (filePath) => {
 
 async function checkExtremeConditions(weatherRecords, destinationCity, flightDate) {
     try {
-        // Find weather record for the destination city and date
-        console.log()
         const record = weatherRecords.find(record => record.city === destinationCity && record.date === flightDate);
 
         // If no record found, return false (weather not available)
@@ -80,92 +77,101 @@ async function checkExtremeConditions(weatherRecords, destinationCity, flightDat
         console.log('Running deployWithWeb3 script...')
         const weatherRecords = await readWeatherData();
         
-
         const artifactsPath = `EthereumFlights/artifacts/FlightInsurance.json` // Change this for different path
 
         const metadata = JSON.parse(await remix.call('fileManager', 'getFile', artifactsPath))
         
         const accounts = await web3.eth.getAccounts()
-        const passengerAddress = accounts[0];
         const insuranceProviderAddress = accounts[1];
 
-        
-        const contract = new web3.eth.Contract(metadata.abi);
+        const citiesAndDates = [
+            { passengerName: "Joey", departureCity: "Hong Kong", destinationCity: "Miami", flightDate: "2023-05-18" },
+            // Add more passengers here with their respective cities and dates
+            { passengerName: "Bob", departureCity: "New York", destinationCity: "Paris", flightDate: "2023-06-20" },
+            { passengerName: "Charlie", departureCity: "London", destinationCity: "Ames", flightDate: "2024-01-9" }
+        ];
 
-        const constructorArgs = [];
-        // Deploy the contract
-        const deployedContract = await contract.deploy({
-            data: metadata.data.bytecode.object,
-            arguments: constructorArgs
-        }).send({
-            from: insuranceProviderAddress,
-            gas: '5000000000000000000' // Adjust gas limit
-        });
+        for (const passenger of citiesAndDates) {
+            console.log(`------------------ CHECKING PASSENGER ${passenger.passengerName} ------------------`)
+            const passengerAddress = accounts[citiesAndDates.indexOf(passenger) + 2]; // Start from index 2
+            
+            const contract = new web3.eth.Contract(metadata.abi);
 
-        contract.options.address = deployedContract.options.address;
-
-        console.log("STARTING");
-        const curPolicy = await contract.methods.viewAvailablePolicy().call({from: passengerAddress});
-        console.log(curPolicy);
-
-        const prevBa = await contract.methods.viewBalance().call({from: passengerAddress});
-        console.log("Prev balance: " + prevBa);
-
-        await contract.methods.purchasePolicy(
-            "Alicia",
-            "1",
-            "2023-05-18", // Ensure correct format for the date
-            "Hong Kong",
-            "Miami"
-        ).send({
-            from: passengerAddress,
-            value: '1000000000000000' // 0.001 ether in wei
-        });
-
-        const boughtPolicy = await contract.methods.viewPurchasedPolicy().call({from: passengerAddress});
-        console.log("Purchased Policy: " +  boughtPolicy);
-
-        alreadyClaimed = false;
-        const extremeWeather = await checkExtremeConditions(weatherRecords, boughtPolicy.destinationCity, boughtPolicy.flightDate);
-        if(extremeWeather) {
-            console.log("-------------------------------------------------------------EXTREME WEATHER FOUND-----------------------------------------------------------");
-            const prevBal = await contract.methods.viewBalance().call({from: passengerAddress});
-            console.log("Prev balance: " + prevBal);
-            await contract.methods.verify(passengerAddress).send({from: insuranceProviderAddress});
-
-            await contract.methods.payIndemnity(passengerAddress).send({
+            const constructorArgs = [];
+            // Deploy the contract
+            const deployedContract = await contract.deploy({
+                data: metadata.data.bytecode.object,
+                arguments: constructorArgs
+            }).send({
                 from: insuranceProviderAddress,
-                value: '300000000000000000'
+                gas: '5000000000000000000' // Adjust gas limit
             });
-            const postBal = await contract.methods.viewBalance().call({from: passengerAddress});
 
-            console.log("Post balance: " + postBal);
-            console.log("Difference: " + (postBal - prevBal));
-            console.log("All Policies:"  + await contract.methods.viewAllPolicies().call({from: insuranceProviderAddress}));
-            console.log("-------------------------------------------------------------------------------------------------------------------------------------------");
-        }
-        const extremeWeatherDateCheck = await checkExtremeConditionsLive(boughtPolicy.destinationCity, boughtPolicy.flightDate);
-        console.log("Extreme weather real-data check: " + extremeWeatherDateCheck);
-        if(extremeWeatherDateCheck && !alreadyClaimed) {
-            console.log("-------------------------------------------------------------REAL EXTREME WEATHER FOUND-----------------------------------------------------------");
-            const prevBal = await contract.methods.viewBalance().call({from: passengerAddress});
-            console.log("Prev balance: " + prevBal);
-            await contract.methods.verify(passengerAddress).send({from: insuranceProviderAddress});
+            contract.options.address = deployedContract.options.address;
+            const curPolicy = await contract.methods.viewAvailablePolicy().call({from: passengerAddress});
+            console.log(`Current policy: ${curPolicy}`);
 
-            await contract.methods.payIndemnity(passengerAddress).send({
-                from: insuranceProviderAddress,
-                value: '300000000000000000'
+            const prevBa = await contract.methods.viewBalance().call({from: passengerAddress});
+            console.log(`Prev balance: ${prevBa}`);
+
+            await contract.methods.purchasePolicy(
+                passenger.passengerName,
+                "1", // Assuming a single flight for now
+                passenger.flightDate, // Ensure correct format for the date
+                passenger.departureCity,
+                passenger.destinationCity
+            ).send({
+                from: passengerAddress,
+                value: '1000000000000000' // 0.001 ether in wei
             });
-            const postBal = await contract.methods.viewBalance().call({from: passengerAddress});
 
-            console.log("Post balance: " + postBal);
-            console.log("Difference: " + (postBal - prevBal));
-            console.log("All Policies:"  + await contract.methods.viewAllPolicies().call({from: insuranceProviderAddress}));
-            console.log("-------------------------------------------------------------------------------------------------------------------------------------------");
+            const boughtPolicy = await contract.methods.viewPurchasedPolicy().call({from: passengerAddress});
+            console.log(`Purchased Policy: ${boughtPolicy}`);
+
+            alreadyClaimed = false;
+            const extremeWeather = await checkExtremeConditions(weatherRecords, boughtPolicy.destinationCity, boughtPolicy.flightDate);
+            if(extremeWeather) {
+                console.log('---File Extreme Weather Found---');
+                const prevBal = await contract.methods.viewBalance().call({from: passengerAddress});
+                console.log(`Prev balance: ${passenger.passengerName}`);
+                await contract.methods.verify(passengerAddress).send({from: insuranceProviderAddress});
+
+                await contract.methods.payIndemnity(passengerAddress).send({
+                    from: insuranceProviderAddress,
+                    value: '300000000000000000'
+                });
+                const postBal = await contract.methods.viewBalance().call({from: passengerAddress});
+
+                console.log(`Post balance: ${postBal}`);
+                console.log(`Difference: ${postBal - prevBal}`);
+                console.log(`All Policies: ${await contract.methods.viewAllPolicies().call({from: insuranceProviderAddress})}`);
+                console.log(`----------------------------------`);
+                alreadyClaimed = true;
+            }
+
+            const extremeWeatherDateCheck = await checkExtremeConditionsLive(boughtPolicy.destinationCity, boughtPolicy.flightDate);
+            console.log(`Extreme weather real-data check: ${extremeWeatherDateCheck}`);
+            if(extremeWeatherDateCheck && !alreadyClaimed) {
+                console.log("---Real Extreme Weather Found---");
+                const prevBal = await contract.methods.viewBalance().call({from: passengerAddress});
+                console.log(`Prev balance: ${prevBal}`);
+                await contract.methods.verify(passengerAddress).send({from: insuranceProviderAddress});
+
+                await contract.methods.payIndemnity(passengerAddress).send({
+                    from: insuranceProviderAddress,
+                    value: '300000000000000000'
+                });
+                const postBal = await contract.methods.viewBalance().call({from: passengerAddress});
+
+                console.log(`Post balance: ${postBal}`);
+                console.log(`Difference: ${postBal - prevBal}`);
+                console.log(`All Policies: ${await contract.methods.viewAllPolicies().call({from: insuranceProviderAddress})}`);
+                console.log("----------------------------------");
+            }
+            console.log(`ENDED  ${passenger.passengerName}`);
         }
     } catch (e) {
         console.log(e.message)
     }
-  })()
-
+})();
 
