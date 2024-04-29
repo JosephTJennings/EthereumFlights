@@ -14,7 +14,7 @@ contract FlightInsurance {
 
     mapping(address => InsurancePolicy) public policies;
     address[] public addressArray; 
-    address public insuranceProvider = 0xAb8483F64d9C6d1EcF9b849Ae677dD3315835cb2;
+    address public insuranceProvider;
     uint256 public premium = 0.001 ether;
     uint256 public indemnity = 0.02 ether;
 
@@ -79,7 +79,7 @@ contract FlightInsurance {
     function payIndemnity(address payable _passengerAddress) external payable onlyInsuranceProvider returns (bool) {
         // Check if the policy exists for the provided passenger address
         require(policies[_passengerAddress].passengerAddress != address(0), "Policy not found");
-                require(msg.value >= indemnity, "Insufficient value");
+        require(msg.value >= indemnity, "Insufficient value");
 
         // Transfer indemnity amount from insurance provider to passenger
         bool success = _passengerAddress.send(indemnity);
